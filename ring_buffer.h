@@ -2,34 +2,43 @@
 #define RING_BUFFER_H
 
 #include <atomic>
-#include <cstddef>
+#include <vector>
 
-template<typename T, size_t Capacity>
-class LockFreeSPSCRingBuffer {
+template <typename T, size_t Capacity>
+class LockFreeSPSC {
 private:
-    T buffer[Capacity];
+    struct Node {
+        T data;
+    };
+
+    Node buffer[Capacity];
     std::atomic<size_t> head{0};
     std::atomic<size_t> tail{0};
 
 public:
     bool push(const T& item) {
-        size_t current_head = head.load(std::memory_order_relaxed);
-        size_t next_head = (current_head + 1) % Capacity;
-        if (next_head == tail.load(std::memory_order_acquire)) {
+        size_t current_tail = tail.load(std::memory_order_relaxed);
+        size_t current_head = head.load(std::memory_order_acquire);
+
+        if ((current_tail + 1) % Capacity == current_head) {
             return false; // Buffer full
         }
-        buffer[current_head] = item;
-        head.store(next_head, std::memory_order_release);
+
+        buffer[current_tail].data = item;
+        tail.store((current_tail + 1) % Capacity, std::memory_order_release);
         return true;
     }
 
     bool pop(T& item) {
-        size_t current_tail = tail.load(std::memory_order_relaxed);
-        if (current_tail == head.load(std::memory_order_acquire)) {
+        size_t current_head = head.load(std::memory_order_relaxed);
+        size_t current_tail = tail.load(std::memory_order_acquire);
+
+        if (current_head == current_tail) {
             return false; // Buffer empty
         }
-        item = buffer[current_tail];
-        tail.store((current_tail + 1) % Capacity, std::memory_order_release);
+
+        item = buffer[current_head].data;
+        head.store((current_head + 1) % Capacity, std::memory_order_release);
         return true;
     }
 };
